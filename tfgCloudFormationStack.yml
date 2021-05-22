@@ -1,0 +1,1080 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+    Generator: "former2"
+Description: ""
+Parameters:
+    BucketName:
+      Description: S3 Bucket name
+      Type: String
+Resources:
+    IAMUser:
+        Type: "AWS::IAM::User"
+        Properties:
+            Path: "/"
+            UserName: "carmrr"
+            Groups:
+              - !Ref IAMGroup
+
+    IAMUser2:
+        Type: "AWS::IAM::User"
+        Properties:
+            Path: "/"
+            UserName: "github"
+            Groups:
+              - !Ref IAMGroup
+
+    IAMGroup:
+        Type: "AWS::IAM::Group"
+        Properties:
+            Path: "/"
+            GroupName: "admin"
+            ManagedPolicyArns:
+              - "arn:aws:iam::aws:policy/AdministratorAccess"
+
+    IAMRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: !Sub "${ResourceGroupsGroup}_ROLE"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns:
+              - "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+              - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+              - "arn:aws:iam::aws:policy/CloudWatchFullAccess"
+              - !Ref IAMManagedPolicy
+            Description: "Allows Lambda functions to call AWS services on your behalf."
+
+    IAMServiceLinkedRole:
+        Type: "AWS::IAM::ServiceLinkedRole"
+        Properties:
+            AWSServiceName: "globalaccelerator.amazonaws.com"
+            Description: "Allows Global Accelerator to call AWS services on customer's behalf"
+
+    IAMManagedPolicy:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: !Sub "${ResourceGroupsGroup}_DYNAMODB"
+            Path: "/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "VisualEditor0",
+                            "Effect": "Allow",
+                            "Action": [
+                                "${SNSTopic.TopicName}:ListContributorInsights",
+                                "${SNSTopic.TopicName}:DescribeReservedCapacityOfferings",
+                                "${SNSTopic.TopicName}:ListGlobalTables",
+                                "${SNSTopic.TopicName}:ListTables",
+                                "${SNSTopic.TopicName}:DescribeReservedCapacity",
+                                "${SNSTopic.TopicName}:ListBackups",
+                                "${SNSTopic.TopicName}:PurchaseReservedCapacityOfferings",
+                                "${SNSTopic.TopicName}:DescribeLimits",
+                                "${SNSTopic.TopicName}:ListExports",
+                                "${SNSTopic.TopicName}:ListStreams"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "VisualEditor1",
+                            "Effect": "Allow",
+                            "Action": "dynamodb:*",
+                            "Resource": [
+                                "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTable2}",
+                                "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTable}"
+                            ]
+                        }
+                    ]
+                }
+
+    LambdaFunction:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "hacerFavor"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  exports.handler = async (event) => {
+                      // TODO implement
+                      const response = {
+                          statusCode: 200,
+                          body: JSON.stringify('Hello from Lambda!'),
+                      };
+                      return response;
+                  };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction2:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "altaNuevoFavor"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  console.log('Empieza el alta de vecinos')
+                  const AWS = require('aws-sdk')
+                  const docClient = new AWS.DynamoDB.DocumentClient({region: 'eu-west-1'})
+                  exports.handler = function(event, context, callback){
+                    console.log('Procesando los datos del nuevo vecino: ' + JSON.stringify(event, null, 2))
+                    let date = new Date().getTime();
+                    let idFavor = Math.floor(100000 + Math.random() * 900000);
+                    let params =  {
+                        Item: {
+                            identificador_favor: idFavor,
+                            solicitante: event.nombre_usuario,
+                            estado: 'pendiente',
+                            descripcion_favor: event.descripcion,
+                            fecha_creacion: date
+                        },
+                        TableName: 'favores'
+                    };
+                    console.log('Vamos a dar de alta un nuevo favor del vecino: ' + params.Item.solicitante)
+                    console.log('El favor consiste en: ' + params.Item.descripcion_favor)
+                    docClient.put(params, function(err,data){
+                       if(err) {
+                           callback(err, null)
+                       }else{
+                           // Insertamos mensajes para que se generen los aviso
+                           console.log('Insertamos en la cola ');
+                           var sqs = new AWS.SQS({apiVersion: '2012-11-05'});
+                           var parametros = {
+                             DelaySeconds: 10,
+                             MessageAttributes: {
+                               "idFavor": {
+                                 DataType: "String",
+                                 StringValue: idFavor.toString()
+                               }
+                             },
+                             MessageBody: "Generar avisos para este favor: " + idFavor,
+                             QueueUrl: "https://sqs.eu-west-1.amazonaws.com/"+JSON.stringify(context.invokedFunctionArn).split(':')[4]+"/colaDeAvisos"
+                           };
+                           sqs.sendMessage(parametros, function(err, data) {
+                             if (err) {
+                               console.log("Error", err);
+                             } else {
+                               console.log("Success", data.MessageId);
+                             }
+                           });
+                           callback(null, data)
+                       }
+                   });
+                  };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction3:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "valorarVecino"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  exports.handler = async (event) => {
+                      // TODO implement
+                      const response = {
+                          statusCode: 200,
+                          body: JSON.stringify('Hello from Lambda!'),
+                      };
+                      return response;
+                  };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction4:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "EnviarAvisoNuevoFavor"
+            Handler: "index.handler"
+            Code:
+                  ZipFile: |
+                    exports.handler = async function(event, context) {
+                    event.Records.forEach(record => {
+                      const { body } = record;
+                      console.log('Mensaje recibido: '+body);
+                    });
+                    return {};
+                    };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction5:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "consultaFavoresPendientes"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  exports.handler = async (event) => {
+                      // TODO implement
+                      const response = {
+                          statusCode: 200,
+                          body: JSON.stringify('Hello from Lambda!'),
+                      };
+                      return response;
+                  };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction6:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "altaFotoPerfil"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  console.log('Empieza a ejecutarse el altaFoto');
+                  const aws = require('aws-sdk');
+                  const s3 = new aws.S3({ apiVersion: '2006-03-01' });
+                  const docClient = new aws.DynamoDB.DocumentClient({apiVersion: '2012-08-10'});
+                  aws.config.update({region: 'eu-west-1'});
+                  exports.handler = function(event, context) {
+                    // Obtenemos los objetos
+                    const bucket = event.Records[0].s3.bucket.name;
+                    const key = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, ' '));
+                    console.log('bucket:', bucket);
+                    console.log('key:', key);
+                    var rutaFoto = key.split('/');
+                    console.log('rutaFoto:', rutaFoto);
+                    var params = {
+                        TableName: 'vecinos',
+                           Key:{
+                            nombre_usuario: rutaFoto[0]
+                         },
+                        UpdateExpression: 'set foto_perfil = :foto',
+                        ExpressionAttributeValues:{
+                          ':foto': key
+                        },
+                        ReturnValues:'UPDATED_NEW'
+                    };
+                    console.log('Vamos a asignarle foto de perfil al vecino: ' +  rutaFoto[0]);
+                    docClient.update(params, function(err, data) {
+                    if (err) console.log(err);
+                    else console.log(data);
+                  });
+                  };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction7:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "aceptarCierreFavor"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  exports.handler = async (event) => {
+                      // TODO implement
+                      const response = {
+                          statusCode: 200,
+                          body: JSON.stringify('Hello from Lambda!'),
+                      };
+                      return response;
+                  };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction8:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "solicitarCierreFavor"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  exports.handler = async (event) => {
+                      // TODO implement
+                      const response = {
+                          statusCode: 200,
+                          body: JSON.stringify('Hello from Lambda!'),
+                      };
+                      return response;
+                  };
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction9:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "altaNuevoVecino"
+            Handler: "index.handler"
+            Code:
+                ZipFile: |
+                  console.log('Empieza el alta de vecinos')
+                  const AWS = require('aws-sdk')
+                  const docClient = new AWS.DynamoDB.DocumentClient({region: 'eu-west-1'})
+                  exports.handler = function(event, context, callback){
+                      console.log('Procesando los datos del nuevo vecino: ' + JSON.stringify(event, null, 2))
+                      let date = new Date().getTime();
+                      let params =  {
+                          Item: {
+                              fecha_alta: event.date ? event.date : date,
+                              nombre_usuario: event.nombre_usuario ? event.nombre_usuario : "Anonymous",
+                              nombre: event.nombre,
+                              apellidos: event.apellidos,
+                              email: event.apellidos
+                          },
+                          TableName: 'vecinos'
+                      };
+                      console.log('Vamos a dar de alta al vecino: ' + params.Item.nombre_usuario)
+                      docClient.put(params, function(err,data){
+                          if(err) {
+                              callback(err, null)
+                          }else{
+                              callback(null, data)
+                          }
+                      });
+                  }
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaFunction10:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "consultaVecinos"
+            Handler: "index.handler"
+            Code:
+              ZipFile: |
+                console.log('Vamos a consultar los vecinos de la aplicacion');
+                const AWS = require('aws-sdk');
+                const docClient = new AWS.DynamoDB.DocumentClient({region: 'eu-west-1'});
+                exports.handler = function(event, context, callback){
+                    console.log('processing event: %j', event);
+                    let scanningParameters = {
+                        TableName: 'vecinos',
+                        Limit: 10 //Resultado máximo 10 valores.
+                    };
+                    docClient.scan(scanningParameters, function(err,data){
+                        if(err){
+                            callback(err, null);
+                        }else{
+                            callback(null,data);
+                        }
+                    });
+                }
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig:
+                Mode: "PassThrough"
+
+    LambdaPermission:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction10.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/vecino"
+
+    LambdaPermission2:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction10.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/vecino"
+
+    LambdaPermission3:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction2.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi2}/*/POST/favor"
+
+    LambdaPermission4:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction3.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/vecino/valoracion"
+
+    LambdaPermission5:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction3.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/vecino/foto-perfil"
+
+    LambdaPermission6:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction6.Arn
+            Principal: "s3.amazonaws.com"
+            SourceArn: !Sub "arn:aws:s3:::${BucketName}"
+
+    LambdaPermission7:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction5.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi2}/*/GET/favor"
+
+    LambdaPermission8:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction9.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/vecino"
+
+    LambdaPermission9:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction8.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi2}/*/POST/favor/confirmacion"
+
+    LambdaPermission10:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction8.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi2}/*/POST/favor/realizacion"
+
+    LambdaPermission11:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction8.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi2}/*/POST/favor/cierre"
+
+
+    LambdaEventSourceMapping2:
+        Type: "AWS::Lambda::EventSourceMapping"
+        Properties:
+            BatchSize: 10
+            EventSourceArn: !GetAtt SQSQueue.Arn
+            FunctionName: !GetAtt LambdaFunction4.Arn
+            Enabled: false
+            MaximumBatchingWindowInSeconds: 60
+
+    SNSTopic:
+        Type: "AWS::SNS::Topic"
+        Properties:
+            DisplayName: ""
+            TopicName: "dynamodb"
+
+    SNSTopicPolicy:
+        Type: "AWS::SNS::TopicPolicy"
+        Properties:
+            PolicyDocument: !Sub "{\"Version\":\"2008-10-17\",\"Id\":\"__policy_ID\",\"Statement\":[{\"Sid\":\"__statement_ID\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"*\"},\"Action\":[\"SNS:GetTopicAttributes\",\"SNS:SetTopicAttributes\",\"SNS:AddPermission\",\"SNS:RemovePermission\",\"SNS:DeleteTopic\",\"SNS:Subscribe\",\"SNS:ListSubscriptionsByTopic\",\"SNS:Publish\",\"SNS:Receive\"],\"Resource\":\"${SNSTopic}\",\"Condition\":{\"StringEquals\":{\"AWS:SourceOwner\":\"${AWS::AccountId}\"}}}]}"
+            Topics:
+              - !Ref SNSTopic
+
+    SQSQueue:
+        Type: "AWS::SQS::Queue"
+        Properties:
+            DelaySeconds: "0"
+            MaximumMessageSize: "262144"
+            MessageRetentionPeriod: "345600"
+            ReceiveMessageWaitTimeSeconds: "0"
+            VisibilityTimeout: "30"
+            QueueName: "colaDeAvisos"
+
+    SQSQueuePolicy:
+        Type: "AWS::SQS::QueuePolicy"
+        Properties:
+            PolicyDocument: !Sub "{\"Version\":\"2008-10-17\",\"Id\":\"__policy_ID\",\"Statement\":[{\"Sid\":\"__owner_statement\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${AWS::AccountId}:root\"},\"Action\":\"SQS:*\",\"Resource\":\"${SQSQueue}\"},{\"Sid\":\"__sender_statement\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${AWS::AccountId}:role/${IAMRole}\"},\"Action\":\"SQS:SendMessage\",\"Resource\":\"${SQSQueue}\"},{\"Sid\":\"__receiver_statement\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${AWS::AccountId}:role/${IAMRole}\"},\"Action\":[\"SQS:ChangeMessageVisibility\",\"SQS:DeleteMessage\",\"SQS:ReceiveMessage\"],\"Resource\":\"${SQSQueue}\"}]}"
+            Queues:
+              - !Sub "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${SQSQueue.QueueName}"
+
+    CloudWatchAlarm:
+        Type: "AWS::CloudWatch::Alarm"
+        Properties:
+            AlarmName: !Sub "${DynamoDBTable}-ReadCapacityUnitsLimit-BasicAlarm"
+            ActionsEnabled: true
+            AlarmActions:
+              - !Ref SNSTopic
+            MetricName: "ConsumedReadCapacityUnits"
+            Namespace: "AWS/DynamoDB"
+            Statistic: "Sum"
+            Dimensions:
+              -
+                Name: "TableName"
+                Value: !Ref DynamoDBTable
+            Period: 60
+            EvaluationPeriods: 5
+            Threshold: 240
+            ComparisonOperator: "GreaterThanOrEqualToThreshold"
+
+    CloudWatchAlarm2:
+        Type: "AWS::CloudWatch::Alarm"
+        Properties:
+            AlarmName: !Sub "${DynamoDBTable}-WriteCapacityUnitsLimit-BasicAlarm"
+            ActionsEnabled: true
+            AlarmActions:
+              - !Ref SNSTopic
+            MetricName: "ConsumedWriteCapacityUnits"
+            Namespace: "AWS/DynamoDB"
+            Statistic: "Sum"
+            Dimensions:
+              -
+                Name: "TableName"
+                Value: !Ref DynamoDBTable
+            Period: 60
+            EvaluationPeriods: 5
+            Threshold: 240
+            ComparisonOperator: "GreaterThanOrEqualToThreshold"
+
+    CloudWatchAlarm3:
+        Type: "AWS::CloudWatch::Alarm"
+        Properties:
+            AlarmName: !Sub "${DynamoDBTable2}-ReadCapacityUnitsLimit-BasicAlarm"
+            ActionsEnabled: true
+            AlarmActions:
+              - !Ref SNSTopic
+            MetricName: "ConsumedReadCapacityUnits"
+            Namespace: "AWS/DynamoDB"
+            Statistic: "Sum"
+            Dimensions:
+              -
+                Name: "TableName"
+                Value: !Ref DynamoDBTable2
+            Period: 60
+            EvaluationPeriods: 5
+            Threshold: 240
+            ComparisonOperator: "GreaterThanOrEqualToThreshold"
+
+    CloudWatchAlarm4:
+        Type: "AWS::CloudWatch::Alarm"
+        Properties:
+            AlarmName: !Sub "${DynamoDBTable2}-WriteCapacityUnitsLimit-BasicAlarm"
+            ActionsEnabled: true
+            AlarmActions:
+              - !Ref SNSTopic
+            MetricName: "ConsumedWriteCapacityUnits"
+            Namespace: "AWS/DynamoDB"
+            Statistic: "Sum"
+            Dimensions:
+              -
+                Name: "TableName"
+                Value: !Ref DynamoDBTable2
+            Period: 60
+            EvaluationPeriods: 5
+            Threshold: 240
+            ComparisonOperator: "GreaterThanOrEqualToThreshold"
+
+    DynamoDBTable:
+        Type: "AWS::DynamoDB::Table"
+        Properties:
+            AttributeDefinitions:
+              -
+                AttributeName: "identificador_favor"
+                AttributeType: "N"
+            TableName: "favores"
+            Tags:
+              -
+                Key: !Sub "DDBTableGroupKey-${ResourceGroupsGroup}"
+                Value: !Ref ResourceGroupsGroup
+            KeySchema:
+              -
+                AttributeName: "identificador_favor"
+                KeyType: "HASH"
+            ProvisionedThroughput:
+                ReadCapacityUnits: 5
+                WriteCapacityUnits: 5
+
+    DynamoDBTable2:
+        Type: "AWS::DynamoDB::Table"
+        Properties:
+            AttributeDefinitions:
+              -
+                AttributeName: "nombre_usuario"
+                AttributeType: "S"
+            TableName: "vecinos"
+            KeySchema:
+              -
+                AttributeName: "nombre_usuario"
+                KeyType: "HASH"
+            ProvisionedThroughput:
+                ReadCapacityUnits: 5
+                WriteCapacityUnits: 5
+
+    ApiGatewayDeployment:
+        Type: "AWS::ApiGateway::Deployment"
+        DependsOn:
+          - "ApiGatewayMethod9"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+
+    ApiGatewayDeployment3:
+        Type: "AWS::ApiGateway::Deployment"
+        DependsOn:
+          - "ApiGatewayMethod4"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+
+    ApiGatewayRestApi:
+        Type: "AWS::ApiGateway::RestApi"
+        Properties:
+            Name: "vecino"
+            Description: !Sub "Permite ejecutar la lógica de negocio para los ${DynamoDBTable2}"
+            ApiKeySourceType: "HEADER"
+            EndpointConfiguration:
+                Types:
+                  - "REGIONAL"
+
+    ApiGatewayRestApi2:
+        Type: "AWS::ApiGateway::RestApi"
+        Properties:
+            Name: "favor"
+            Description: !Sub "Permite ejecutar la lógica de negocio para los ${DynamoDBTable}"
+            ApiKeySourceType: "HEADER"
+            EndpointConfiguration:
+                Types:
+                  - "REGIONAL"
+
+    ApiGatewayStage:
+        Type: "AWS::ApiGateway::Stage"
+        Properties:
+            StageName: "default"
+            DeploymentId: !Ref ApiGatewayDeployment3
+            RestApiId: !Ref ApiGatewayRestApi2
+            CacheClusterEnabled: false
+            CacheClusterSize: "0.5"
+            MethodSettings:
+              -
+                CacheDataEncrypted: false
+                CacheTtlInSeconds: 300
+                CachingEnabled: false
+                DataTraceEnabled: false
+                HttpMethod: "*"
+                LoggingLevel: "OFF"
+                MetricsEnabled: false
+                ResourcePath: "/*"
+                ThrottlingBurstLimit: 5000
+                ThrottlingRateLimit: 10000
+            TracingEnabled: false
+
+    ApiGatewayStage2:
+        Type: "AWS::ApiGateway::Stage"
+        Properties:
+            StageName: "default"
+            DeploymentId: !Ref ApiGatewayDeployment
+            RestApiId: !Ref ApiGatewayRestApi
+            CacheClusterEnabled: false
+            MethodSettings:
+              -
+                CacheDataEncrypted: false
+                CacheTtlInSeconds: 300
+                CachingEnabled: false
+                DataTraceEnabled: false
+                HttpMethod: "*"
+                LoggingLevel: "OFF"
+                MetricsEnabled: false
+                ResourcePath: "/*"
+                ThrottlingBurstLimit: 5000
+                ThrottlingRateLimit: 10000
+            TracingEnabled: false
+
+    ApiGatewayResource:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            PathPart: "confirmacion"
+            ParentId: !Ref ApiGatewayResource3
+
+    ApiGatewayResource2:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            PathPart: "cierre"
+            ParentId: !Ref ApiGatewayResource3
+
+    ApiGatewayResource3:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            PathPart: "favor"
+            ParentId: !GetAtt ApiGatewayRestApi2.RootResourceId
+
+    ApiGatewayResource4:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            PathPart: "foto-perfil"
+            ParentId: !Ref ApiGatewayResource6
+
+    ApiGatewayResource5:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            PathPart: "valoracion"
+            ParentId: !Ref ApiGatewayResource6
+
+    ApiGatewayResource6:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            PathPart: "vecino"
+            ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+
+
+    ApiGatewayMethod:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            ResourceId: !Ref ApiGatewayResource
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_MATCH"
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction8}/invocations"
+
+    ApiGatewayMethod2:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            ResourceId: !Ref ApiGatewayResource2
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource2
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_MATCH"
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction8}/invocations"
+
+    ApiGatewayMethod3:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            ResourceId: !Ref ApiGatewayResource3
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource3
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_TEMPLATES"
+                RequestTemplates:
+                    "application/json": |
+                        {
+                          "nombre_usuario": $input.json('$.nombre_usuario'),
+                          "descripcion": $input.json('$.descripcion')
+                        }
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction2}/invocations"
+
+    ApiGatewayMethod4:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            ResourceId: !Ref ApiGatewayResource3
+            HttpMethod: "GET"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource3
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_MATCH"
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction5}/invocations"
+
+    ApiGatewayMethod6:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource4
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel4
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource4
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_MATCH"
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction3}/invocations"
+
+    ApiGatewayMethod7:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource5
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel4
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource5
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_MATCH"
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction3}/invocations"
+
+    ApiGatewayMethod8:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource6
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel4
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource6
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_TEMPLATES"
+                RequestTemplates:
+                    "application/json": |
+                        {
+                          "nombre_usuario": $input.json('$.nombre_usuario'),
+                          "nombre": $input.json('$.nombre'),
+                          "apellidos": $input.json('$.apellidos'),
+                          "email": $input.json('$.email')
+                        }
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction9}/invocations"
+
+    ApiGatewayMethod9:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource6
+            HttpMethod: "GET"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses:
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel4
+                StatusCode: "200"
+            Integration:
+                CacheNamespace: !Ref ApiGatewayResource6
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses:
+                  -
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_MATCH"
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction10}/invocations"
+
+    ApiGatewayModel:
+        Type: "AWS::ApiGateway::Model"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            Description: !Sub "This is a empty schema model"
+            Schema: !Sub |
+                {
+                  "$schema": "http://json-schema.org/draft-04/schema#",
+                  "title" : "Schema",
+                  "type" : "object"
+                }
+            ContentType: "application/json"
+
+    ApiGatewayModel2:
+        Type: "AWS::ApiGateway::Model"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi2
+            Description: !Sub "This is a error schema model"
+            Schema: !Sub |
+                {
+                  "$schema" : "http://json-schema.org/draft-04/schema#",
+                  "title" : "Schema",
+                  "type" : "object",
+                  "properties" : {
+                    "message" : { "type" : "string" }
+                  }
+                }
+            ContentType: "application/json"
+
+    ApiGatewayModel3:
+        Type: "AWS::ApiGateway::Model"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            Description: !Sub "This is a error schema model"
+            Schema: |
+                {
+                  "$schema" : "http://json-schema.org/draft-04/schema#",
+                  "title" : "Error Schema",
+                  "type" : "object",
+                  "properties" : {
+                    "message" : { "type" : "string" }
+                  }
+                }
+            ContentType: "application/json"
+
+    ApiGatewayModel4:
+        Type: "AWS::ApiGateway::Model"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            Description: !Sub "This is a empty schema model"
+            Schema: |
+                {
+                  "$schema": "http://json-schema.org/draft-04/schema#",
+                  "title" : "Empty Schema",
+                  "type" : "object"
+                }
+            ContentType: "application/json"
+
+    ResourceGroupsGroup:
+        Type: "AWS::ResourceGroups::Group"
+        Properties:
+            Name: "TFG_CRR"
+            ResourceQuery:
+                Type: "TAG_FILTERS_1_0"
+                Query:
+                    ResourceTypeFilters:
+                      - "AWS::DynamoDB::Table"
+                    TagFilters:
+                      -
+                        Key: "DDBTableGroupKey-TFG_CRR"
+                        Values:
+                          - "TFG_CRR"
+    S3Bucket:
+      Type: 'AWS::S3::Bucket'
+      DeletionPolicy: Retain
+      DependsOn: LambdaPermission6
+      Properties:
+        BucketName: !Ref BucketName
+        NotificationConfiguration:
+          LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Function: !GetAtt LambdaFunction6.Arn
