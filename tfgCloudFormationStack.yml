@@ -120,11 +120,24 @@ Resources:
             Handler: "index.handler"
             Code:
                 ZipFile: |
-                  console.log('Empieza el alta de vecinos')
+                  console.log('Empieza el alta de favor')
                   const AWS = require('aws-sdk')
                   const docClient = new AWS.DynamoDB.DocumentClient({region: 'eu-west-1'})
+                  const required_fields = ['nombre_usuario', 'descripcion'];
                   exports.handler = function(event, context, callback){
-                    console.log('Procesando los datos del nuevo vecino: ' + JSON.stringify(event, null, 2))
+                    console.log('Procesando los datos del nuevo favor: ' + JSON.stringify(event, null, 2))
+
+                      if (required_fields.some(field => event[field] === undefined) || required_fields.some(field => event[field] == '')) {
+                      console.log("Falta algun dato obligatorio");
+                      var myErrorObj = {
+                          errorType : "BadRequestError",
+                          httpStatus : 400,
+                          requestId : context.awsRequestId
+
+                      }
+                      callback(JSON.stringify(myErrorObj));
+                      throw new Error('BadRequestError');
+                  }
                     let date = new Date().getTime();
                     let idFavor = Math.floor(100000 + Math.random() * 900000);
                     let params =  {
@@ -137,7 +150,7 @@ Resources:
                         },
                         TableName: 'favores'
                     };
-                    console.log('Vamos a dar de alta un nuevo favor del vecino: ' + params.Item.solicitante)
+                    console.log('Vamos a dar de alta un nuevo favor del favor: ' + params.Item.solicitante)
                     console.log('El favor consiste en: ' + params.Item.descripcion_favor)
                     docClient.put(params, function(err,data){
                        if(err) {
@@ -342,11 +355,24 @@ Resources:
             Handler: "index.handler"
             Code:
                 ZipFile: |
-                  console.log('Empieza el alta de vecinos')
-                  const AWS = require('aws-sdk')
-                  const docClient = new AWS.DynamoDB.DocumentClient({region: 'eu-west-1'})
-                  exports.handler = function(event, context, callback){
-                      console.log('Procesando los datos del nuevo vecino: ' + JSON.stringify(event, null, 2))
+                      console.log('Empieza el alta de vecinos')
+                      const AWS = require('aws-sdk')
+                      const docClient = new AWS.DynamoDB.DocumentClient({region: 'eu-west-1'})
+                      const required_fields = ['nombre_usuario', 'nombre', 'apellidos', 'email'];
+                      exports.handler = function(event, context, callback){
+                          console.log('Procesando los datos del nuevo vecino: ' + JSON.stringify(event, null, 2))
+                          
+                          if (required_fields.some(field => event[field] === undefined) || required_fields.some(field => event[field] == '')) {
+                          console.log("Falta algun dato obligatorio"); 
+                          var myErrorObj = {
+                              errorType : "BadRequestError",
+                              httpStatus : 400,
+                              requestId : context.awsRequestId
+                            
+                          }
+                          callback(JSON.stringify(myErrorObj));
+                          throw new Error('BadRequestError');
+                      }
                       let date = new Date().getTime();
                       let params =  {
                           Item: {
@@ -650,6 +676,9 @@ Resources:
         Type: "AWS::ApiGateway::Deployment"
         DependsOn:
           - "ApiGatewayMethod9"
+          - "ApiGatewayMethod8"
+          - "ApiGatewayMethod7"
+          - "ApiGatewayMethod6"
         Properties:
             RestApiId: !Ref ApiGatewayRestApi
 
@@ -657,6 +686,9 @@ Resources:
         Type: "AWS::ApiGateway::Deployment"
         DependsOn:
           - "ApiGatewayMethod4"
+          - "ApiGatewayMethod3"
+          - "ApiGatewayMethod2"
+          - "ApiGatewayMethod"
         Properties:
             RestApiId: !Ref ApiGatewayRestApi2
 
@@ -780,6 +812,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel2
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -788,6 +824,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_MATCH"
                 TimeoutInMillis: 29000
                 Type: "AWS"
@@ -807,6 +846,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel2
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource2
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -815,6 +858,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_MATCH"
                 TimeoutInMillis: 29000
                 Type: "AWS"
@@ -834,6 +880,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel2
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource3
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -842,6 +892,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_TEMPLATES"
                 RequestTemplates:
                     "application/json": |
@@ -867,6 +920,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel2
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource3
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -875,6 +932,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_MATCH"
                 TimeoutInMillis: 29000
                 Type: "AWS"
@@ -894,6 +954,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel4
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel3
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource4
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -902,6 +966,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_MATCH"
                 TimeoutInMillis: 29000
                 Type: "AWS"
@@ -921,6 +988,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel4
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel3
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource5
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -929,6 +1000,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_MATCH"
                 TimeoutInMillis: 29000
                 Type: "AWS"
@@ -948,6 +1022,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel4
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel3
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource6
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -956,6 +1034,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_TEMPLATES"
                 RequestTemplates:
                     "application/json": |
@@ -983,6 +1064,10 @@ Resources:
                 ResponseModels:
                     "application/json": !Ref ApiGatewayModel4
                 StatusCode: "200"
+              -
+                ResponseModels:
+                    "application/json": !Ref ApiGatewayModel3
+                StatusCode: "400"
             Integration:
                 CacheNamespace: !Ref ApiGatewayResource6
                 ContentHandling: "CONVERT_TO_TEXT"
@@ -991,6 +1076,9 @@ Resources:
                   -
                     ResponseTemplates: {}
                     StatusCode: "200"
+                  -
+                    SelectionPattern: !Sub ".*BadRequestError.*"
+                    StatusCode: "400"
                 PassthroughBehavior: "WHEN_NO_MATCH"
                 TimeoutInMillis: 29000
                 Type: "AWS"
@@ -1070,7 +1158,7 @@ Resources:
                           - "TFG_CRR"
     S3Bucket:
       Type: 'AWS::S3::Bucket'
-      DeletionPolicy: Retain
+      DeletionPolicy: Delete
       DependsOn: LambdaPermission6
       Properties:
         BucketName: !Ref BucketName
