@@ -4,7 +4,7 @@ Metadata:
 Description: ""
 Parameters:
     BucketName:
-      Description: S3 Bucket name
+      Description: S3 Bucket name (lowercase)
       Type: String
 Resources:
     IAMUser:
@@ -392,7 +392,7 @@ Resources:
                               callback(null, data)
                           }
                       });
-                  }
+                      };
             MemorySize: 128
             Role: !GetAtt IAMRole.Arn
             Runtime: "nodejs12.x"
